@@ -1,92 +1,115 @@
-# Criando-um-Servi-o-Autenticador-de-Boletos
+# Servico Autenticador de Boletos
 
-Como Criar um Serviço Autônomo para Autenticação de Boletos
-A criação de um serviço autenticador de boletos envolve validação de código de barras/linha digitável, integração com sistemas bancários e implementação de camadas de segurança. Abaixo está um guia técnico, baseado em padrões FEBRABAN e exemplos práticos:
+Este repositorio virou uma API executavel para autenticacao de boletos, em vez de ficar apenas no campo conceitual. O projeto agora valida linha digitavel e codigo de barras, diferencia boleto bancario de boleto de arrecadacao, converte entre formatos e retorna metadados uteis para integracao.
 
-1. Arquitetura do Sistema
-Backend: API REST para processamento de validações.
+## O que o projeto entrega
 
-Banco de Dados: Armazenamento de registros de transações e dados de boletos suspeitos.
+- API REST em FastAPI
+- validacao de boletos bancarios com modulo 10 e modulo 11
+- validacao de boletos de arrecadacao com modulo 10 ou modulo 11
+- conversao entre linha digitavel e codigo de barras
+- endpoint de health check
+- rate limiting simples em memoria
+- suporte opcional a API key por header
+- testes automatizados
+- Dockerfile para execucao e deploy basico
 
-Camada de Segurança: Autenticação de API, rate limiting e criptografia.
+## Estrutura
 
-Integração: Conector com instituições financeiras para verificação em tempo real (opcional).
+- `app/main.py`: endpoints da API
+- `app/validator.py`: regras de validacao e parsing
+- `app/security.py`: API key opcional e rate limiting
+- `tests/test_validator.py`: cobertura dos cenarios principais
+- `examples/sample-request.json`: payload de exemplo
 
-2. Desenvolvimento da API de Validação
-Implemente um endpoint para validar boletos via código de barras ou linha digitável:
+## Endpoints
 
-javascript
-// Exemplo em Node.js (Express)
-app.get('/api/validar-boleto/:codigo', async (req, res) => {
-  const codigo = req.params.codigo;
-  try {
-    const { valido, dados } = await validarBoleto(codigo); // Lógica de validação
-    res.json({ valido, dados });
-  } catch (erro) {
-    res.status(400).json({ erro: "Formato inválido" });
-  }
-});
-Lógica de Validação
-Etapa 1: Verificar dígitos verificadores (módulo 10 ou 11, conforme padrão FEBRABAN).
+### `GET /health`
 
-Etapa 2: Extrair dados do boleto (valor, vencimento, beneficiário).
+Retorna o status da aplicacao.
 
-Etapa 3: Consultar base de boletos fraudulentos (opcionalmente, integrar APIs como Serasa).
+### `POST /api/boletos/validate`
 
-3. Implementação de Segurança
-Autenticação: Use JWT ou API Keys para controlar acesso à API.
+Valida um codigo enviado como linha digitavel ou codigo de barras.
 
-Rate Limiting: Limite requisições por IP (ex: 100 validações/hora por usuário).
+Exemplo de corpo:
 
-Criptografia: Tráfego HTTPS e criptografia de dados sensíveis (ex: códigos de boletos).
-
-Sanitização de Inputs: Valide padrões do código (44/47 dígitos).
-
-4. Frontend para Usuários
-Crie uma interface simples para inserção do código do boleto e exibição de resultados:
-
-xml
-<!-- Exemplo de formulário -->
-<input type="text" id="codigoBoleto" placeholder="Código de barras ou linha digitável">
-<button onclick="validarBoleto()">Validar</button>
-<div id="resultado"></div>
-5. Integração com Sistemas Externos
-Bancos/Processadoras: Use APIs como PIX ou serviços de validação em tempo real (ex: Febraban).
-
-Banco Central: Consulte registros de chaves Pix para validar beneficiários.
-
-Serasa/Transfeera: Incorpore validações antifraude via webhooks.
-
-6. Implantação e Escalabilidade
-Contêineres: Use Docker para empacotar a aplicação.
-
-Nuvem: Implante no Azure Container Apps, AWS ECS ou Google Cloud Run para escalonamento automático.
-
-Monitoramento: Configure logs e alertas para atividades suspeitas (ex: múltiplas tentativas de validação do mesmo código).
-
-Melhores Práticas
-Validação Dupla: Confirme dados do beneficiário via CNPJ/CPF e nome.
-
-Atualização Contínua: Mantenha regras de validação alinhadas com padrões bancários.
-
-Educação do Usuário: Inclua dicas para evitar golpes (ex: desconfiar de boletos recebidos por WhatsApp).
-
-Exemplo de Resposta da API
-json
+```json
 {
-  "valido": true,
-  "dados": {
-    "valor": 1500.00,
-    "vencimento": "2025-07-15",
-    "beneficiario": "Empresa XYZ Ltda",
-    "cnpj": "12.345.678/0001-99"
-  }
+  "code": "00190500954014481606906809350314337370000000100"
 }
-Ferramentas Recomendadas
-Validador Open Source: Adapte o projeto GitHub validador-de-boletos.
+```
 
-Azure API Management: Gerencie endpoints e políticas de segurança.
+Exemplo de resposta:
 
-Serasa API: Integre validação antifraude em tempo real.
+```json
+{
+  "input_code": "00190500954014481606906809350314337370000000100",
+  "normalized_code": "00190500954014481606906809350314337370000000100",
+  "type": "bank_slip",
+  "format": "digitable_line",
+  "valid": true,
+  "barcode": "00193373700000001000500940144816060680935031",
+  "digitable_line": "00190500954014481606906809350314337370000000100",
+  "amount": 1.0,
+  "due_date": "2007-12-31",
+  "bank_code": "001",
+  "currency_code": "9",
+  "segment_code": null,
+  "value_type": null,
+  "warning": "Fator de vencimento ambiguo apos 22/02/2025. Outra data possivel: 2032-08-21.",
+  "message": "Boleto bancario valido. Banco identificado: Banco do Brasil."
+}
+```
 
-Este serviço pode ser expandido com recursos como notificações via SMS, histórico de consultas e relatórios de tentativas de fraude.
+## Como executar localmente
+
+### Com Python
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+### Com Docker
+
+```bash
+docker build -t boleto-auth .
+docker run -p 8000:8000 boleto-auth
+```
+
+## Seguranca basica
+
+O projeto inclui dois mecanismos simples para deixar o exemplo mais realista:
+
+- rate limiting em memoria por IP
+- API key opcional via header `X-API-Key`
+
+Se a variavel `BOLETO_AUTH_API_KEY` estiver definida, a API passa a exigir esse header.
+
+## Cobertura atual
+
+- validacao de boleto bancario por linha digitavel
+- validacao de boleto bancario por codigo de barras
+- validacao de boleto de arrecadacao
+- rejeicao de digito verificador invalido
+- validacao do payload HTTP
+
+## Observacao importante sobre vencimento
+
+O fator de vencimento dos boletos bancarios foi reiniciado em 22/02/2025. Por isso, alguns fatores entre `1000` e `9999` podem representar duas datas possiveis, dependendo da data de emissao. Quando isso acontece, a API retorna uma data principal e inclui um aviso com a data alternativa.
+
+## Referencias
+
+Este projeto foi estruturado com base em documentacoes tecnicas usadas no mercado:
+
+- [Banco do Brasil: Especificacoes Tecnicas para Confeccao de Boleto de Pagamentos](https://www.bb.com.br/docs/pub/emp/empl/dwn/Doc5175Bloqueto.pdf)
+- [FEBRABAN: Layout Padrao de Arrecadacao e Recebimento](https://www.febraban.org.br/7Rof7SWg6qmyvwJcFwF7I0aSDf9jyV/sitefebraban/Codbar4-v28052004.pdf)
+
+## Proximos passos
+
+- persistir logs de validacao
+- adicionar lista de boletos suspeitos
+- integrar observabilidade
+- publicar imagem em registry
+- adicionar autenticacao JWT para clientes internos
